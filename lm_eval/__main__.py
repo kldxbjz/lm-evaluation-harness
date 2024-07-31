@@ -1,4 +1,5 @@
 import argparse
+import importlib
 import json
 import logging
 import os
@@ -250,6 +251,12 @@ def setup_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Sets trust_remote_code to True to execute code to create HF Datasets from the Hub",
     )
+    parser.add_argument(
+        "--cipher",
+        type=str,
+        default=None,
+        help="Name of the cipher class to use for encryption/decryption",
+    )
     return parser
 
 
@@ -372,6 +379,17 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         cache_requests=args.cache_requests
     )
 
+    cipher = None
+    if args.cipher:
+        try:
+            module_path, class_name = args.cipher.rsplit('.', 1)
+            module = importlib.import_module(module_path)
+            CipherClass = getattr(module, class_name)
+            cipher = CipherClass()
+        except (ImportError, AttributeError) as e:
+            raise ValueError(f"Failed to import cipher class '{args.cipher}': {e}")
+
+
     results = evaluator.simple_evaluate(
         model=args.model,
         model_args=args.model_args,
@@ -397,6 +415,7 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         numpy_random_seed=args.seed[1],
         torch_random_seed=args.seed[2],
         fewshot_random_seed=args.seed[3],
+        cipher=cipher,
         **request_caching_args,
     )
 

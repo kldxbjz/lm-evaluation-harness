@@ -3,16 +3,18 @@ import hashlib
 import json
 import logging
 import os
-from typing import Dict, List, Optional, Tuple, Type, TypeVar
+from typing import Callable, Dict, List, Optional, Tuple, Type, TypeVar
 
 import transformers
 from sqlitedict import SqliteDict
 from tqdm import tqdm
 
 from lm_eval import utils
-
-
+from lm_eval.api.instance import Instance
 eval_logger = logging.getLogger("lm-eval")
+
+
+
 
 T = TypeVar("T", bound="LM")
 
@@ -206,6 +208,109 @@ class LM(abc.ABC):
     def set_cache_hook(self, cache_hook) -> None:
         self.cache_hook = cache_hook
 
+
+
+class CipherLM(LM):
+    def __init__(self, base_lm: LM, encrypt: Callable, decrypt: Callable,path="path/to/prefix"):
+        super().__init__()
+        self.base_lm = base_lm
+        self.encrypt = lambda x: f"x"
+        self.decrypt = decrypt
+        self.path = path
+
+    def _safe_encrypt(self, text: str) -> str:
+        llama_tags = [
+            "<|begin_of_text|>",
+            "<|start_header_id|>",
+        ]
+        for tag in llama_tags:
+            assert tag not in text, f"LLaMA tag '{tag}' found in text to be encrypted. This is not allowed."
+        return self.encrypt(text)
+
+    def _safe_decrypt(self, text: str) -> str:
+        llama_tags = [
+            "<|begin_of_text|>",
+            "<|start_header_id|>",
+        ]
+        for tag in llama_tags:
+            assert tag not in text, f"LLaMA tag '{tag}' found in text to be decrypted. This is not allowed."
+        return self.decrypt(text)
+
+    def loglikelihood(self, requests) -> List[Tuple[float, bool]]:
+        encrypted_requests = []
+        for req in requests:
+            context, continuation = req.args
+            # Only encrypt the continuation (document response)
+            encrypted_continuation = self._safe_encrypt(continuation)
+            encrypted_req = Instance(
+                request_type=req.request_type,
+                doc=req.doc,
+                arguments=(context, encrypted_continuation),  # context remains unencrypted
+                idx=req.idx,
+                metadata=req.metadata
+            )
+            encrypted_requests.append(encrypted_req)
+
+        results = self.base_lm.loglikelihood(encrypted_requests)
+        return results
+
+    def loglikelihood_rolling(self, requests) -> List[Tuple[float]]:
+        encrypted_requests = []
+        for req in requests:
+            context, = req.args
+            encrypted_context = self._safe_encrypt(context)
+            encrypted_req = Instance(
+                request_type=req.request_type,
+                doc=req.doc,
+                arguments=(encrypted_context,),
+                idx=req.idx,
+                metadata=req.metadata
+            )
+            encrypted_requests.append(encrypted_req)
+
+        results = self.base_lm.loglikelihood_rolling(encrypted_requests)
+        return results
+
+    def generate_until(self, requests) -> List[str]:
+        results = self.base_lm.generate_until(requests)
+        return [self._safe_decrypt(result) for result in results]
+
+    def apply_chat_template(self, chat_history: List[Dict[str, str]]) -> str:
+        # Encrypt each message in the chat history, except for system messages
+        encrypted_chat_history = [
+            {
+                "role": message["role"],
+                "content": message["content"] if message["role"] == "system" else self._safe_encrypt(message["content"])
+            }
+            for message in chat_history
+        ]
+        # Apply the chat template of the base model
+        encrypted_result = self.base_lm.apply_chat_template(encrypted_chat_history)
+        # No need to decrypt here as this will be used as input to the model
+        return encrypted_result
+
+    @property
+    def rank(self):
+        return self.base_lm.rank
+
+    @property
+    def world_size(self):
+        return self.base_lm.world_size
+
+    @property
+    def tokenizer_name(self) -> str:
+        return self.base_lm.tokenizer_name
+
+    @property
+    def chat_template(self) -> str:
+        return self.base_lm.chat_template
+
+    def set_cache_hook(self, cache_hook) -> None:
+        self.base_lm.set_cache_hook(cache_hook)
+
+    def __getattr__(self, attr):
+        # Fallback to base_lm for any attributes not explicitly defined
+        return getattr(self.base_lm, attr)
 
 ### SQLite-based caching of LM responses
 def hash_args(attr, args):

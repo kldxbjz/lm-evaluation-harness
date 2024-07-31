@@ -4,12 +4,13 @@ import logging
 import random
 import time
 from collections import defaultdict
-from typing import TYPE_CHECKING, List, Optional, Union
+from typing import TYPE_CHECKING, Callable, List, Optional, Union
 
 import numpy as np
 import torch
 
 import lm_eval.api.metrics
+from lm_eval.api.model import CipherLM
 import lm_eval.api.registry
 import lm_eval.models
 from lm_eval.caching.cache import delete_cache
@@ -68,6 +69,7 @@ def simple_evaluate(
     numpy_random_seed: int = 1234,
     torch_random_seed: int = 1234,
     fewshot_random_seed: int = 1234,
+    cipher: Optional[Callable] = None,
 ):
     """Instantiate and evaluate a model on a list of tasks.
 
@@ -123,7 +125,8 @@ def simple_evaluate(
         Random seed for torch. If set to None, the seed will not be set.
     :param fewshot_random_seed: int
         Random seed for fewshot sampler random generator. If set to None, the seed of generator will be set to None.
-
+    :param cipher: Optional[Callable]
+        A callable that implements encrypt and decrypt methods for ciphertext evaluation.
     :return
         Dictionary of results
     """
@@ -203,6 +206,12 @@ def simple_evaluate(
         eval_logger.info("Using pre-initialized model")
         lm = model
 
+    if cipher:
+        if not (hasattr(cipher, 'encrypt') and hasattr(cipher, 'decrypt')):
+            raise ValueError("The provided cipher must have 'encrypt' and 'decrypt' methods.")
+        eval_logger.info("Applying cipher to model inputs and outputs")
+        lm = CipherLM(lm, cipher.encrypt, cipher.decrypt)
+
     if use_cache is not None:
         eval_logger.info(f"Using cache at {use_cache + '_rank' + str(lm.rank) + '.db'}")
         lm = lm_eval.api.model.CachingLM(
@@ -265,6 +274,12 @@ def simple_evaluate(
     if check_integrity:
         run_task_tests(task_list=tasks)
 
+    if cipher:
+        for task_name, task in task_dict.items():
+            if task.OUTPUT_TYPE not in ["loglikelihood", "loglikelihood_rolling", "generate_until"]:
+                eval_logger.warning(f"Task '{task_name}' with output type '{task.OUTPUT_TYPE}' may not be compatible with the cipher.")
+ 
+
     if evaluation_tracker is not None:
         evaluation_tracker.general_config_tracker.log_experiment_args(
             model_source=model,
@@ -321,6 +336,7 @@ def simple_evaluate(
                 "numpy_seed": numpy_random_seed,
                 "torch_seed": torch_random_seed,
                 "fewshot_seed": fewshot_random_seed,
+                "cipher": cipher.__class__.__name__ if cipher else None,
             }
         )
         results["git_hash"] = get_git_commit_hash()
