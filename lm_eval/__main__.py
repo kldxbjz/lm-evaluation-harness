@@ -257,6 +257,13 @@ def setup_parser() -> argparse.ArgumentParser:
         default=None,
         help="Name of the cipher class to use for encryption/decryption",
     )
+
+    parser.add_argument(
+        "--prefix",
+        type=str,
+        default=None,
+        help="Path to a file with prefixes for appending to questions",
+    )
     return parser
 
 
@@ -390,6 +397,9 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
             raise ValueError(f"Failed to import cipher class '{args.cipher}': {e}")
 
 
+
+
+
     results = evaluator.simple_evaluate(
         model=args.model,
         model_args=args.model_args,
@@ -416,6 +426,7 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         torch_random_seed=args.seed[2],
         fewshot_random_seed=args.seed[3],
         cipher=cipher,
+        prefix=args.prefix,
         **request_caching_args,
     )
 

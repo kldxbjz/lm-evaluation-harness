@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 import lm_eval.api.metrics
-from lm_eval.api.model import CipherLM
+from lm_eval.api.model import CipherLM, PrefixLM
 import lm_eval.api.registry
 import lm_eval.models
 from lm_eval.caching.cache import delete_cache
@@ -70,6 +70,7 @@ def simple_evaluate(
     torch_random_seed: int = 1234,
     fewshot_random_seed: int = 1234,
     cipher: Optional[Callable] = None,
+    prefix: str = None,
 ):
     """Instantiate and evaluate a model on a list of tasks.
 
@@ -127,6 +128,8 @@ def simple_evaluate(
         Random seed for fewshot sampler random generator. If set to None, the seed of generator will be set to None.
     :param cipher: Optional[Callable]
         A callable that implements encrypt and decrypt methods for ciphertext evaluation.
+    :param prefix: str
+        A str for the path where prefixes are saved.
     :return
         Dictionary of results
     """
@@ -211,6 +214,9 @@ def simple_evaluate(
             raise ValueError("The provided cipher must have 'encrypt' and 'decrypt' methods.")
         eval_logger.info("Applying cipher to model inputs and outputs")
         lm = CipherLM(lm, cipher.encrypt, cipher.decrypt)
+    
+    if prefix is not None:
+        lm = PrefixLM(lm, prefix)
 
     if use_cache is not None:
         eval_logger.info(f"Using cache at {use_cache + '_rank' + str(lm.rank) + '.db'}")
