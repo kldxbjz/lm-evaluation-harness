@@ -216,7 +216,7 @@ class PrefixLM(LM):
         super().__init__()
         self.base_lm = base_lm
         self.path = path
-        if ".txt" in path: 
+        if "txt" in self.path:
             with open(self.path, 'r') as file:
                 self.prefix = file.readline().strip()
                 # print("Initializing-----This is the prefix")
@@ -373,7 +373,169 @@ class PrefixLM(LM):
 
 
 
+class SuffixLM(LM):
+    def __init__(self, base_lm: LM,path="/data/zora_che/robust-unlearning-benchmark/test.csv"):
+        super().__init__()
+        self.base_lm = base_lm
+        self.path = path
+        if "txt" in self.path:
+            with open(self.path, 'r') as file:
+                self.suffix = file.readline().strip()
+                # print("Initializing-----This is the prefix")
+                # print(self.prefix)
+                # break
+        else:
+            self.suffix = self.path
+        # self.add_suffix = lambda x: f"{self.suffix} {x}"
 
+    def _safe_suffix(self, text: str) -> str:
+        llama_tags = [
+            "<|begin_of_text|>",
+            "<|start_header_id|>",
+        ]
+        for tag in llama_tags:
+            assert tag not in text, f"LLaMA tag '{tag}' found in text to be encrypted. This is not allowed."
+        
+        modified_text = text.replace("? A. ", f"? {self.suffix} A. ")
+    
+        print(modified_text)
+        return modified_text
+        
+        # print("adding suffix")
+        # print(self.add_suffix(text))
+        # return self.add_suffix(text)
+
+    def loglikelihood(self, requests) -> List[Tuple[float, bool]]:
+        suffixed_requests = []
+        for req in requests:
+            context, continuation = req.args
+            # Add the suffix only if it is not already present in the context
+            if "? A. " in context:
+                context = self._safe_suffix(context)
+            suffixed_req = Instance(
+                request_type=req.request_type,
+                doc=req.doc,
+                arguments=(context, continuation),  # continuation remains unsuffixed
+                idx=req.idx,
+                metadata=req.metadata
+            )
+            suffixed_requests.append(suffixed_req)
+
+        results = self.base_lm.loglikelihood(suffixed_requests)
+        return results
+        # suffixed_requests = []
+        # for req in requests:
+        #     context, continuation = req.args
+        #     # Add the suffix only if it is not already present in the continuation
+        #     if not continuation.startswith(self.suffix):
+        #         continuation = self._safe_suffix(continuation)
+        #     suffixed_req = Instance(
+        #         request_type=req.request_type,
+        #         doc=req.doc,
+        #         arguments=(context, continuation),  # context remains unsuffixed
+        #         idx=req.idx,
+        #         metadata=req.metadata
+        #     )
+        #     suffixed_requests.append(suffixed_req)
+
+        # results = self.base_lm.loglikelihood(suffixed_requests)
+        # return results
+
+    def loglikelihood_rolling(self, requests) -> List[Tuple[float]]:
+        suffixed_requests = []
+        for req in requests:
+            context, = req.args
+            # Add the suffix only if it is not already present in the context
+            if not context.startswith(self.suffix):
+                context = self._safe_suffix(context)
+            suffixed_req = Instance(
+                request_type=req.request_type,
+                doc=req.doc,
+                arguments=(context,),
+                idx=req.idx,
+                metadata=req.metadata
+            )
+            suffixed_requests.append(suffixed_req)
+
+        results = self.base_lm.loglikelihood_rolling(suffixed_requests)
+        return results
+        # suffixed_requests = []
+        # for req in requests:
+        #     context, = req.args
+        #     # Add the suffix only if it is not already present in the context
+        #     if not context.startswith(self.suffix):
+        #         context = self._safe_suffix(context)
+        #     suffixed_req = Instance(
+        #         request_type=req.request_type,
+        #         doc=req.doc,
+        #         arguments=(context,),
+        #         idx=req.idx,
+        #         metadata=req.metadata
+        #     )
+        #     suffixed_requests.append(suffixed_req)
+
+        # results = self.base_lm.loglikelihood_rolling(suffixed_requests)
+        # return results
+
+    def generate_until(self, requests) -> List[str]:
+        suffixed_requests = []
+        for req in requests:
+            context, until = req.args
+            # Add the suffix only if it is not already present in the context
+            if not context.startswith(self.suffix):
+                context = self._safe_suffix(context)
+                # print("the current context!")
+                # print(context)
+                # print("_____")
+            suffixed_req = Instance(
+                request_type=req.request_type,
+                doc=req.doc,
+                arguments=(context, until),
+                idx=req.idx,
+                metadata=req.metadata
+            )
+            suffixed_requests.append(suffixed_req)
+
+        results = self.base_lm.generate_until(suffixed_requests)
+        return results
+
+
+    # def apply_chat_template(self, chat_history: List[Dict[str, str]]) -> str:
+    #     # Encrypt each message in the chat history, except for system messages
+    #     encrypted_chat_history = [
+    #         {
+    #             "role": message["role"],
+    #             "content": message["content"] if message["role"] == "system" else self._safe_encrypt(message["content"])
+    #         }
+    #         for message in chat_history
+    #     ]
+    #     # Apply the chat template of the base model
+    #     encrypted_result = self.base_lm.apply_chat_template(encrypted_chat_history)
+    #     # No need to decrypt here as this will be used as input to the model
+    #     return encrypted_result
+
+    @property
+    def rank(self):
+        return self.base_lm.rank
+
+    @property
+    def world_size(self):
+        return self.base_lm.world_size
+
+    @property
+    def tokenizer_name(self) -> str:
+        return self.base_lm.tokenizer_name
+
+    @property
+    def chat_template(self) -> str:
+        return self.base_lm.chat_template
+
+    def set_cache_hook(self, cache_hook) -> None:
+        self.base_lm.set_cache_hook(cache_hook)
+
+    def __getattr__(self, attr):
+        # Fallback to base_lm for any attributes not explicitly defined
+        return getattr(self.base_lm, attr)
 
 
 
