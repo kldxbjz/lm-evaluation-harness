@@ -216,11 +216,14 @@ class PrefixLM(LM):
         super().__init__()
         self.base_lm = base_lm
         self.path = path
-        with open(self.path, 'r') as file:
-            self.prefix = file.readline().strip()
-            # print("Initializing-----This is the prefix")
-            # print(self.prefix)
-            # break
+        if ".txt" in path: 
+            with open(self.path, 'r') as file:
+                self.prefix = file.readline().strip()
+                # print("Initializing-----This is the prefix")
+                # print(self.prefix)
+                # break
+        else:
+            self.prefix = self.path
         self.add_prefix = lambda x: f"{self.prefix} {x}"
 
     def _safe_prefix(self, text: str) -> str:
