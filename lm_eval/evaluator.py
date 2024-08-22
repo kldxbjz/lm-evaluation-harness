@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 import lm_eval.api.metrics
-from lm_eval.api.model import CipherLM, PrefixLM
+from lm_eval.api.model import CipherLM, PrefixLM, SuffixLM
 import lm_eval.api.registry
 import lm_eval.models
 from lm_eval.caching.cache import delete_cache
@@ -71,6 +71,7 @@ def simple_evaluate(
     fewshot_random_seed: int = 1234,
     cipher: Optional[Callable] = None,
     prefix: str = None,
+    suffix: str = None,
 ):
     """Instantiate and evaluate a model on a list of tasks.
 
@@ -210,13 +211,18 @@ def simple_evaluate(
         lm = model
 
     if cipher:
-        if not (hasattr(cipher, 'encrypt') and hasattr(cipher, 'decrypt')):
-            raise ValueError("The provided cipher must have 'encrypt' and 'decrypt' methods.")
+        if not (hasattr(cipher, "encrypt") and hasattr(cipher, "decrypt")):
+            raise ValueError(
+                "The provided cipher must have 'encrypt' and 'decrypt' methods."
+            )
         eval_logger.info("Applying cipher to model inputs and outputs")
         lm = CipherLM(lm, cipher.encrypt, cipher.decrypt)
-    
+
     if prefix is not None:
         lm = PrefixLM(lm, prefix)
+
+    if suffix is not None:
+        lm = SuffixLM(lm, suffix)
 
     if use_cache is not None:
         eval_logger.info(f"Using cache at {use_cache + '_rank' + str(lm.rank) + '.db'}")
@@ -225,9 +231,7 @@ def simple_evaluate(
             use_cache
             # each rank receives a different cache db.
             # necessary to avoid multiple writes to cache at once
-            + "_rank"
-            + str(lm.rank)
-            + ".db",
+            + "_rank" + str(lm.rank) + ".db",
         )
 
     if task_manager is None:
@@ -282,9 +286,14 @@ def simple_evaluate(
 
     if cipher:
         for task_name, task in task_dict.items():
-            if task.OUTPUT_TYPE not in ["loglikelihood", "loglikelihood_rolling", "generate_until"]:
-                eval_logger.warning(f"Task '{task_name}' with output type '{task.OUTPUT_TYPE}' may not be compatible with the cipher.")
- 
+            if task.OUTPUT_TYPE not in [
+                "loglikelihood",
+                "loglikelihood_rolling",
+                "generate_until",
+            ]:
+                eval_logger.warning(
+                    f"Task '{task_name}' with output type '{task.OUTPUT_TYPE}' may not be compatible with the cipher."
+                )
 
     if evaluation_tracker is not None:
         evaluation_tracker.general_config_tracker.log_experiment_args(
@@ -421,12 +430,12 @@ def evaluate(
             system_instruction=system_instruction,
             apply_chat_template=apply_chat_template,
             fewshot_as_multiturn=fewshot_as_multiturn,
-            chat_template=getattr(lm, "apply_chat_template")
-            if apply_chat_template
-            else None,
-            tokenizer_name=getattr(lm, "tokenizer_name", "")
-            if apply_chat_template
-            else "",
+            chat_template=(
+                getattr(lm, "apply_chat_template") if apply_chat_template else None
+            ),
+            tokenizer_name=(
+                getattr(lm, "tokenizer_name", "") if apply_chat_template else ""
+            ),
         )
         eval_logger.debug(
             f"Task: {task_output.task_name}; number of requests on this rank: {len(task.instances)}"

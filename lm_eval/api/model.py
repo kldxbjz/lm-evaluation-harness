@@ -11,9 +11,8 @@ from tqdm import tqdm
 
 from lm_eval import utils
 from lm_eval.api.instance import Instance
+
 eval_logger = logging.getLogger("lm-eval")
-
-
 
 
 T = TypeVar("T", bound="LM")
@@ -209,15 +208,16 @@ class LM(abc.ABC):
         self.cache_hook = cache_hook
 
 
-
-# For now, let's read the first line  
+# For now, let's read the first line
 class PrefixLM(LM):
-    def __init__(self, base_lm: LM,path="/data/zora_che/robust-unlearning-benchmark/test.csv"):
+    def __init__(
+        self, base_lm: LM, path="/data/zora_che/robust-unlearning-benchmark/test.csv"
+    ):
         super().__init__()
         self.base_lm = base_lm
         self.path = path
         if "txt" in self.path:
-            with open(self.path, 'r') as file:
+            with open(self.path, "r") as file:
                 self.prefix = file.readline().strip()
                 # print("Initializing-----This is the prefix")
                 # print(self.prefix)
@@ -232,7 +232,9 @@ class PrefixLM(LM):
             "<|start_header_id|>",
         ]
         for tag in llama_tags:
-            assert tag not in text, f"LLaMA tag '{tag}' found in text to be encrypted. This is not allowed."
+            assert (
+                tag not in text
+            ), f"LLaMA tag '{tag}' found in text to be encrypted. This is not allowed."
         # print("adding prefix")
         print(self.add_prefix(text))
         return self.add_prefix(text)
@@ -249,7 +251,7 @@ class PrefixLM(LM):
                 doc=req.doc,
                 arguments=(context, continuation),  # continuation remains unprefixed
                 idx=req.idx,
-                metadata=req.metadata
+                metadata=req.metadata,
             )
             prefixed_requests.append(prefixed_req)
 
@@ -276,7 +278,7 @@ class PrefixLM(LM):
     def loglikelihood_rolling(self, requests) -> List[Tuple[float]]:
         prefixed_requests = []
         for req in requests:
-            context, = req.args
+            (context,) = req.args
             # Add the prefix only if it is not already present in the context
             if not context.startswith(self.prefix):
                 context = self._safe_prefix(context)
@@ -285,7 +287,7 @@ class PrefixLM(LM):
                 doc=req.doc,
                 arguments=(context,),
                 idx=req.idx,
-                metadata=req.metadata
+                metadata=req.metadata,
             )
             prefixed_requests.append(prefixed_req)
 
@@ -324,13 +326,12 @@ class PrefixLM(LM):
                 doc=req.doc,
                 arguments=(context, until),
                 idx=req.idx,
-                metadata=req.metadata
+                metadata=req.metadata,
             )
             prefixed_requests.append(prefixed_req)
 
         results = self.base_lm.generate_until(prefixed_requests)
         return results
-
 
     # def apply_chat_template(self, chat_history: List[Dict[str, str]]) -> str:
     #     # Encrypt each message in the chat history, except for system messages
@@ -370,22 +371,22 @@ class PrefixLM(LM):
         return getattr(self.base_lm, attr)
 
 
-
-
-
 class SuffixLM(LM):
-    def __init__(self, base_lm: LM,path="/data/zora_che/robust-unlearning-benchmark/test.csv"):
+    def __init__(
+        self, base_lm: LM, path="/data/zora_che/robust-unlearning-benchmark/test.csv"
+    ):
         super().__init__()
         self.base_lm = base_lm
         self.path = path
         if "txt" in self.path:
-            with open(self.path, 'r') as file:
+            with open(self.path, "r") as file:
                 self.suffix = file.readline().strip()
                 # print("Initializing-----This is the prefix")
                 # print(self.prefix)
                 # break
-        else:
-            self.suffix = self.path
+        elif ".csv" in self.path:
+            with open(self.path, "r") as file:
+                self.suffix = [line.strip() for line in file]
         # self.add_suffix = lambda x: f"{self.suffix} {x}"
 
     def _safe_suffix(self, text: str) -> str:
@@ -394,13 +395,15 @@ class SuffixLM(LM):
             "<|start_header_id|>",
         ]
         for tag in llama_tags:
-            assert tag not in text, f"LLaMA tag '{tag}' found in text to be encrypted. This is not allowed."
-        
-        modified_text = text.replace("? A. ", f"? {self.suffix} A. ")
-    
+            assert (
+                tag not in text
+            ), f"LLaMA tag '{tag}' found in text to be encrypted. This is not allowed."
+
+        modified_text = text.replace("?\nA.", f"{self.suffix[0]}?\nA.")
+
         print(modified_text)
         return modified_text
-        
+
         # print("adding suffix")
         # print(self.add_suffix(text))
         # return self.add_suffix(text)
@@ -410,14 +413,14 @@ class SuffixLM(LM):
         for req in requests:
             context, continuation = req.args
             # Add the suffix only if it is not already present in the context
-            if "? A. " in context:
+            if "?\nA." in context:
                 context = self._safe_suffix(context)
             suffixed_req = Instance(
                 request_type=req.request_type,
                 doc=req.doc,
                 arguments=(context, continuation),  # continuation remains unsuffixed
                 idx=req.idx,
-                metadata=req.metadata
+                metadata=req.metadata,
             )
             suffixed_requests.append(suffixed_req)
 
@@ -444,16 +447,16 @@ class SuffixLM(LM):
     def loglikelihood_rolling(self, requests) -> List[Tuple[float]]:
         suffixed_requests = []
         for req in requests:
-            context, = req.args
+            (context,) = req.args
             # Add the suffix only if it is not already present in the context
-            if not context.startswith(self.suffix):
+            if "? \nA. " in context:
                 context = self._safe_suffix(context)
             suffixed_req = Instance(
                 request_type=req.request_type,
                 doc=req.doc,
                 arguments=(context,),
                 idx=req.idx,
-                metadata=req.metadata
+                metadata=req.metadata,
             )
             suffixed_requests.append(suffixed_req)
 
@@ -492,13 +495,12 @@ class SuffixLM(LM):
                 doc=req.doc,
                 arguments=(context, until),
                 idx=req.idx,
-                metadata=req.metadata
+                metadata=req.metadata,
             )
             suffixed_requests.append(suffixed_req)
 
         results = self.base_lm.generate_until(suffixed_requests)
         return results
-
 
     # def apply_chat_template(self, chat_history: List[Dict[str, str]]) -> str:
     #     # Encrypt each message in the chat history, except for system messages
@@ -538,15 +540,10 @@ class SuffixLM(LM):
         return getattr(self.base_lm, attr)
 
 
-
-
-
-
-
-
-
 class CipherLM(LM):
-    def __init__(self, base_lm: LM, encrypt: Callable, decrypt: Callable,path="path/to/prefix"):
+    def __init__(
+        self, base_lm: LM, encrypt: Callable, decrypt: Callable, path="path/to/prefix"
+    ):
         super().__init__()
         self.base_lm = base_lm
         self.encrypt = lambda x: f"x"
@@ -559,7 +556,9 @@ class CipherLM(LM):
             "<|start_header_id|>",
         ]
         for tag in llama_tags:
-            assert tag not in text, f"LLaMA tag '{tag}' found in text to be encrypted. This is not allowed."
+            assert (
+                tag not in text
+            ), f"LLaMA tag '{tag}' found in text to be encrypted. This is not allowed."
         return self.encrypt(text)
 
     def _safe_decrypt(self, text: str) -> str:
@@ -568,7 +567,9 @@ class CipherLM(LM):
             "<|start_header_id|>",
         ]
         for tag in llama_tags:
-            assert tag not in text, f"LLaMA tag '{tag}' found in text to be decrypted. This is not allowed."
+            assert (
+                tag not in text
+            ), f"LLaMA tag '{tag}' found in text to be decrypted. This is not allowed."
         return self.decrypt(text)
 
     def loglikelihood(self, requests) -> List[Tuple[float, bool]]:
@@ -580,9 +581,12 @@ class CipherLM(LM):
             encrypted_req = Instance(
                 request_type=req.request_type,
                 doc=req.doc,
-                arguments=(context, encrypted_continuation),  # context remains unencrypted
+                arguments=(
+                    context,
+                    encrypted_continuation,
+                ),  # context remains unencrypted
                 idx=req.idx,
-                metadata=req.metadata
+                metadata=req.metadata,
             )
             encrypted_requests.append(encrypted_req)
 
@@ -592,14 +596,14 @@ class CipherLM(LM):
     def loglikelihood_rolling(self, requests) -> List[Tuple[float]]:
         encrypted_requests = []
         for req in requests:
-            context, = req.args
+            (context,) = req.args
             encrypted_context = self._safe_encrypt(context)
             encrypted_req = Instance(
                 request_type=req.request_type,
                 doc=req.doc,
                 arguments=(encrypted_context,),
                 idx=req.idx,
-                metadata=req.metadata
+                metadata=req.metadata,
             )
             encrypted_requests.append(encrypted_req)
 
@@ -615,7 +619,11 @@ class CipherLM(LM):
         encrypted_chat_history = [
             {
                 "role": message["role"],
-                "content": message["content"] if message["role"] == "system" else self._safe_encrypt(message["content"])
+                "content": (
+                    message["content"]
+                    if message["role"] == "system"
+                    else self._safe_encrypt(message["content"])
+                ),
             }
             for message in chat_history
         ]
@@ -646,6 +654,7 @@ class CipherLM(LM):
     def __getattr__(self, attr):
         # Fallback to base_lm for any attributes not explicitly defined
         return getattr(self.base_lm, attr)
+
 
 ### SQLite-based caching of LM responses
 def hash_args(attr, args):
