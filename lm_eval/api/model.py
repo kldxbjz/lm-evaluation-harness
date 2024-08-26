@@ -387,6 +387,8 @@ class SuffixLM(LM):
         elif ".csv" in self.path:
             with open(self.path, "r") as file:
                 self.suffix = [line.strip() for line in file]
+        else:
+            self.suffix = [self.path]
         # self.add_suffix = lambda x: f"{self.suffix} {x}"
 
     def _safe_suffix(self, text: str) -> str:
