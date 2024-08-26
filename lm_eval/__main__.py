@@ -264,6 +264,12 @@ def setup_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path to a file with prefixes for appending to questions",
     )
+    parser.add_argument(
+        "--suffix",
+        type=str,
+        default=None,
+        help="Path to a file with suffixes for appending to questions",
+    )
     return parser
 
 
@@ -389,16 +395,12 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     cipher = None
     if args.cipher:
         try:
-            module_path, class_name = args.cipher.rsplit('.', 1)
+            module_path, class_name = args.cipher.rsplit(".", 1)
             module = importlib.import_module(module_path)
             CipherClass = getattr(module, class_name)
             cipher = CipherClass()
         except (ImportError, AttributeError) as e:
             raise ValueError(f"Failed to import cipher class '{args.cipher}': {e}")
-
-
-
-
 
     results = evaluator.simple_evaluate(
         model=args.model,
@@ -427,6 +429,7 @@ def cli_evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         fewshot_random_seed=args.seed[3],
         cipher=cipher,
         prefix=args.prefix,
+        suffix=args.suffix,
         **request_caching_args,
     )
 
