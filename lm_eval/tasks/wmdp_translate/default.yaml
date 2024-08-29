@@ -1,5 +1,5 @@
-task: wmdp_translate
 dataset_path: kldxbjz/wmdp
+group: wmdp_translate
 test_split: test
 training_split: null
 validation_split: null
